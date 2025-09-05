@@ -22,7 +22,9 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const safeDropInRoutes = require("./routes/safeDropInRoutes");
 const saleRoutes = require("./routes/saleRoutes");
+const subcategoryRoutes = require("./routes/subcategories");
 
+app.use("/api/subcategories", subcategoryRoutes);
 app.use("/api/products", productRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use("/api/expenses", expenseRoutes);

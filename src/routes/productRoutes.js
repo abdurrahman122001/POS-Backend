@@ -1,13 +1,11 @@
-// routes/productRoutes.js
-const express = require("express");
-const router = express.Router();
-const productController = require("../controllers/productController");
+// routes/products.js
+const router = require("express").Router();
+const ctrl = require("../controllers/productController");
 
-router.get("/", productController.getProducts);              // ?category=Tea&q=rice&limit=20&page=1
-router.get("/category/:category", productController.getByCategory); // /api/products/category/Tea
-router.get("/:id", productController.getProduct);
-router.post("/", productController.createProduct);
-router.put("/:id", productController.updateProduct);
-router.delete("/:id", productController.deleteProduct);
+router.get("/", ctrl.listProducts);
+router.get("/:id", ctrl.getProduct);
+router.post("/", ctrl.createProduct);
+router.put("/:id", ctrl.updateProduct);
+router.delete("/:id", ctrl.deleteProduct);
 
 module.exports = router;

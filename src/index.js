@@ -26,13 +26,14 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const safeDropInRoutes = require("./routes/safeDropInRoutes");
 const saleRoutes = require("./routes/saleRoutes");
 const subcategoryRoutes = require("./routes/subcategories");
-
+const tenderRoutes = require("./routes/tenderRoutes");
 app.use("/api/subcategories", subcategoryRoutes);
 app.use("/api/products", productRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/safe-drop-ins", safeDropInRoutes);
 app.use("/api/sales", saleRoutes);
+app.use("/api/tender-denoms", tenderRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

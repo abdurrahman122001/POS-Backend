@@ -27,6 +27,9 @@ const safeDropInRoutes = require("./routes/safeDropInRoutes");
 const saleRoutes = require("./routes/saleRoutes");
 const subcategoryRoutes = require("./routes/subcategories");
 const tenderRoutes = require("./routes/tenderRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+
+app.use("/api/admins", adminRoutes);
 app.use("/api/subcategories", subcategoryRoutes);
 app.use("/api/products", productRoutes);
 app.use('/api/categories', categoryRoutes);

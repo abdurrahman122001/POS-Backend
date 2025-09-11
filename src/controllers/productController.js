@@ -20,27 +20,62 @@ exports.getProduct = async (req, res) => {
   }
 };
 
-// GET /products?search=&category=&subcategory=&isActive=true
+// GET /products?search=&category=&subcategory=&isActive=true&limit=200
 exports.listProducts = async (req, res) => {
   try {
-    const { search = "", category, subcategory, isActive } = req.query;
+    const { search = "", category, subcategory, isActive, limit } = req.query;
 
     const filter = {};
     if (search) filter.name = { $regex: search, $options: "i" };
-    if (category) filter.category = category;
-    if (subcategory) filter.subcategory = subcategory;
+
+    // Resolve category: allow id or name; avoid CastError
+    if (category) {
+      let catId = null;
+      if (mongoose.isValidObjectId(category)) {
+        catId = category;
+      } else {
+        const catDoc = await Category.findOne({ name: category }).select("_id").lean();
+        if (catDoc) catId = catDoc._id;
+      }
+      if (catId) filter.category = catId;
+      else if (!search) return res.json([]); // unknown category name -> empty list
+    }
+
+    // Resolve subcategory: allow id or name; avoid CastError
+    if (subcategory) {
+      let subId = null;
+      if (mongoose.isValidObjectId(subcategory)) {
+        subId = subcategory;
+      } else {
+        const subDoc = await Subcategory.findOne({ name: subcategory }).select("_id").lean();
+        if (subDoc) subId = subDoc._id;
+      }
+      if (subId) filter.subcategory = subId;
+      else if (!search) return res.json([]); // unknown subcategory -> empty list
+    }
+
     if (typeof isActive !== "undefined") filter.isActive = isActive === "true";
+
+    const lim = Math.max(1, Math.min(1000, Number(limit) || 0)) || undefined;
 
     const items = await Product.find(filter)
       .populate({ path: "category", select: "name isActive" })
       .populate({ path: "subcategory", select: "name isActive category" })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(lim || 0)
+      .lean();
 
     res.json(items);
   } catch (err) {
+    // If a cast slips through for any other reason, surface a clear message
+    if (err instanceof mongoose.Error.CastError) {
+      return res.status(400).json({ message: "Invalid filter id provided" });
+    }
+    console.error("listProducts error:", err);
     res.status(500).json({ message: "Failed to load products" });
   }
 };
+
 
 // POST /products
 // body: { name, price, stockQty, category(ObjectId), subcategory?(ObjectId) }

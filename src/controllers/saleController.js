@@ -4,9 +4,10 @@ const Product = require("../models/Product");
 
 exports.createSale = async (req, res) => {
   try {
-    const { customerName, items, tender = 0 } = req.body || {};
-    if (!customerName || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: "customerName and items are required" });
+    const { items, tender = 0, customerName } = req.body || {};
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: "items are required" });
     }
 
     const detailed = [];
@@ -19,7 +20,6 @@ exports.createSale = async (req, res) => {
       const qty = Number(it.qty) || 0;
       if (qty <= 0) return res.status(400).json({ message: "Invalid qty for product " + prod.name });
 
-      // optional stock check
       if (prod.stockQty < qty) {
         return res.status(400).json({ message: `Insufficient stock for ${prod.name}` });
       }
@@ -37,6 +37,10 @@ exports.createSale = async (req, res) => {
     }
 
     const returnAmount = Math.max(0, Number(tender) - netTotal);
+    if (tender < netTotal) {
+      return res.status(400).json({ message: "Tender amount is less than net total" });
+    }
+
 
     const sale = await Sale.create({
       customerName,
@@ -46,18 +50,20 @@ exports.createSale = async (req, res) => {
       returnAmount,
     });
 
-    // reduce stock
     await Promise.all(
       detailed.map((d) =>
         Product.findByIdAndUpdate(d.product, { $inc: { stockQty: -d.qty } })
       )
     );
 
-    res.status(201).json(sale);
+    //always include customerName in response
+   res.status(201).json(sale);
+
   } catch (e) {
     res.status(500).json({ message: e.message });
   }
 };
+
 
 exports.listSales = async (req, res) => {
   try {

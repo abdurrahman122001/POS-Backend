@@ -31,8 +31,10 @@ exports.createSubcategory = async (req, res) => {
         }
 
 
-        const catExists = await Category.findById(category);
-        if (!catExists) return res.status(404).json({ message: "Parent category not found" });
+        // Find category by name instead of _id
+        const catExists = await Category.findOne({ name: category.trim() });
+
+        if (!catExists) return res.status(404).json({ message: `Category '${category}' not found` });
 
 
         const created = await Subcategory.create({
@@ -40,7 +42,7 @@ exports.createSubcategory = async (req, res) => {
             description: description.trim(),
             image,
             isActive,
-            category,
+            category: catExists._id,
         });
 
 
@@ -60,24 +62,24 @@ exports.listSubcategories = async (req, res) => {
     try {
         const { search = "", category, isActive } = req.query;
 
-
         const filter = {};
         if (search) filter.name = { $regex: search, $options: "i" };
-        if (category) filter.category = category;
-        if (typeof isActive !== "undefined") filter.isActive = isActive === "true";
-
+        if (category) {
+            const catExists = await Category.findOne({ name: category.trim() });
+            if (!catExists) return res.status(404).json({ message: `Category '${category}' not found` });
+            filter.category = catExists._id;
+        }
+        if (typeof isActive !== "undefined") filter.isActive = isActive === "true" || isActive === true;
 
         const items = await Subcategory.find(filter)
             .populate({ path: "category", select: "name isActive" })
             .sort({ createdAt: -1 });
 
-
         res.json(items);
     } catch (err) {
-        res.status(500).json({ message: "Failed to load subcategories" });
+        res.status(500).json({ message: "Failed to load subcategories", error: err.message });
     }
 };
-
 
 // PUT /subcategories/:id
 exports.updateSubcategory = async (req, res) => {

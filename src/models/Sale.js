@@ -14,7 +14,8 @@ const SaleItemSchema = new mongoose.Schema(
 
 const SaleSchema = new mongoose.Schema(
   {
-    customerName: { type: String,default: "Walk-in Customer"},
+    customerId: { type: String }, // Changed from customerName
+    paymentMode: { type: String, required: true}, 
     items: { type: [SaleItemSchema], required: true },
     netTotal: { type: Number, required: true },
     tender: { type: Number, default: 0 },

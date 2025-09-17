@@ -4,12 +4,14 @@ const Product = require("../models/Product");
 
 exports.createSale = async (req, res) => {
   try {
-    const { items, tender = 0, customerName } = req.body || {};
+    const { items, tender = 0, customerId, paymentMode } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "items are required" });
     }
-
+    if (!paymentMode) { // Line ~8: Validate paymentMode
+      return res.status(400).json({ message: "paymentMode is required" });
+    }
     const detailed = [];
     let netTotal = 0;
 
@@ -37,13 +39,14 @@ exports.createSale = async (req, res) => {
     }
 
     const returnAmount = Math.max(0, Number(tender) - netTotal);
-    if (tender < netTotal) {
+    if (tender < netTotal && paymentMode !== "Credit") { // Line ~32: Allow Credit to have zero tender
       return res.status(400).json({ message: "Tender amount is less than net total" });
     }
 
 
     const sale = await Sale.create({
-      customerName,
+      customerId,
+      paymentMode, // Line ~38: Add paymentMode to Sale.create
       items: detailed,
       netTotal,
       tender,
@@ -57,7 +60,7 @@ exports.createSale = async (req, res) => {
     );
 
     //always include customerName in response
-   res.status(201).json(sale);
+    res.status(201).json(sale);
 
   } catch (e) {
     res.status(500).json({ message: e.message });

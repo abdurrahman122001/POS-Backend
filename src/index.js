@@ -28,6 +28,8 @@ const saleRoutes = require("./routes/saleRoutes");
 const subcategoryRoutes = require("./routes/subcategories");
 const tenderRoutes = require("./routes/tenderRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const inventoryRoutes = require("./routes/inventoryRoutes");
+const cashRoutes = require("./routes/cashRoutes");
 
 app.use("/api/admins", adminRoutes);
 app.use("/api/subcategories", subcategoryRoutes);
@@ -37,6 +39,8 @@ app.use("/api/expenses", expenseRoutes);
 app.use("/api/safe-drop-ins", safeDropInRoutes);
 app.use("/api/sales", saleRoutes);
 app.use("/api/tender-denoms", tenderRoutes);
+app.use("/api/inventory", inventoryRoutes);
+app.use("/api/cash", cashRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

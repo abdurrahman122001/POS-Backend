@@ -12,7 +12,7 @@ exports.createSale = async (req, res) => {
     if (!paymentMode) {
       return res.status(400).json({ message: "paymentMode is required" });
     }
-    
+
     const detailed = [];
     let netTotal = 0;
 
@@ -27,14 +27,17 @@ exports.createSale = async (req, res) => {
         return res.status(400).json({ message: `Insufficient stock for ${prod.name}` });
       }
 
-      const lineTotal = prod.price * qty;
+      const price = Number.isFinite(it.unitPrice) && it.unitPrice > 0 ? it.unitPrice : prod.price;
+      const discount = Number.isFinite(it.discount) ? it.discount : 0;
+      const lineTotal = price * qty - discount;
       netTotal += lineTotal;
 
       detailed.push({
         product: prod._id,
-        name: prod.name,
-        price: prod.price,
+        name: it.name || prod.name, // Prefer frontend name if provided
+        price, // Use frontend unitPrice if valid, else fallback to prod.price
         qty,
+        discount, // Include discount
         total: lineTotal,
       });
     }
@@ -61,8 +64,8 @@ exports.createSale = async (req, res) => {
     );
 
     res.status(201).json(sale);
-
   } catch (e) {
+    console.error("Error in createSale:", e);
     res.status(500).json({ message: e.message });
   }
 };

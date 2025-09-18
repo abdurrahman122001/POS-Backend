@@ -32,6 +32,11 @@ exports.createExpense = async (req, res) => {
 
     return res.status(201).json(expense);
   } catch (err) {
+    console.error("Error creating expense:", err); // Add logging for debugging
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({ message: 'Validation error', errors });
+    }
     return res.status(500).json({ message: 'Server error', error: err?.message });
   }
 };

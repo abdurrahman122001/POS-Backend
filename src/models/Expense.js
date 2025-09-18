@@ -8,7 +8,7 @@ const ExpenseSchema = new mongoose.Schema({
   transactionDetails: { type: String },
   date: { type: Date, default: Date.now },
   paymentAmount: { type: Number, required: true },
-  paymentMode: { type: String, enum: ["Cash", "Cheque", "Credit Card"], required: true },
+  paymentMode: { type: String, enum: ["Cash", "UPI", "Credit Card"], required: true },
 }, { timestamps: true });
 
 module.exports = mongoose.model("Expense", ExpenseSchema);

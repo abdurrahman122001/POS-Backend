@@ -54,24 +54,25 @@ exports.listProducts = async (req, res) => {
       else if (!search) return res.json([]); // unknown subcategory -> empty list
     }
 
-    if (typeof isActive !== "undefined") filter.isActive = isActive === "true";
+    // Comment out isActive filter for testing
+    // if (typeof isActive !== "undefined") filter.isActive = isActive === "true";
 
+    // Remove limit for testing
     const lim = Math.max(1, Math.min(1000, Number(limit) || 0)) || undefined;
 
     const items = await Product.find(filter)
       .populate({ path: "category", select: "name isActive" })
       .populate({ path: "subcategory", select: "name isActive category" })
       .sort({ createdAt: -1 })
-      .limit(lim || 0)
+      // .limit(lim || 0) // Comment out for testing
       .lean();
+
 
     res.json(items);
   } catch (err) {
-    // If a cast slips through for any other reason, surface a clear message
     if (err instanceof mongoose.Error.CastError) {
       return res.status(400).json({ message: "Invalid filter id provided" });
     }
-    console.error("listProducts error:", err);
     res.status(500).json({ message: "Failed to load products" });
   }
 };

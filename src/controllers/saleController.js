@@ -44,9 +44,9 @@ exports.createSale = async (req, res) => {
     }
 
     const returnAmount = Math.max(0, Number(tender) - netTotal);
-    if (tender < netTotal && paymentMode !== "Credit") {
-      return res.status(400).json({ message: "Tender amount is less than net total" });
-    }
+    if (tender < netTotal && !["Credit Card", "Credit"].includes(paymentMode)) {
+  return res.status(400).json({ message: "Tender amount is less than net total" });
+}
 
     const sale = await Sale.create({
       customerId,
@@ -70,6 +70,7 @@ exports.createSale = async (req, res) => {
     res.status(500).json({ message: e.message });
   }
 };
+
 exports.createReturn = async (req, res) => {
   try {
     const { originalSaleId, customerId, items, returnAmount: frontendReturnAmount, notes } = req.body;

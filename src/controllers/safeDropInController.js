@@ -2,24 +2,54 @@
 const SafeDropIn = require("../models/SafeDropIn");
 
 const parseIntOr = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
-
 exports.createSafeDropIn = async (req, res) => {
   try {
     const body = req.body || {};
-    const doc = await SafeDropIn.create({
-      dropNo: body.dropNo,
-      userName: body.userName,
-      details: body.details,
-      date: body.date,
-      denominations: body.denominations,
-      dropInTender: body.dropInTender,
+    const { dropNo, userName, details, date, denominations, dropInTender } = body;
+
+    if (!dropNo || !userName || !date) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+    if (!denominations || typeof denominations !== "object") {
+      return res.status(400).json({ message: "Invalid denominations" });
+    }
+    if (typeof dropInTender !== "number" || isNaN(dropInTender) || dropInTender < 0) {
+      return res.status(400).json({ message: "Invalid dropInTender" });
+    }
+
+    const amountFromDenoms = Object.entries(denominations).reduce(
+      (sum, [denom, count]) => sum + parseInt(denom) * Number(count),
+      0
+    );
+    console.log("Creating Safe Drop In:", {
+      dropNo,
+      amountFromDenoms,
+      dropInTender,
+      difference: dropInTender - amountFromDenoms,
     });
+
+    const doc = await SafeDropIn.create({
+      dropNo,
+      userName,
+      details: details || "",
+      date,
+      denominations,
+      dropInTender,
+    });
+
+    console.log("Safe Drop In created:", {
+      id: doc._id,
+      amountFromDenoms,
+      dropInTender,
+      difference: dropInTender - amountFromDenoms,
+    });
+
     return res.status(201).json(doc);
   } catch (err) {
+    console.error("Error creating Safe Drop In:", err);
     return res.status(400).json({ message: err.message });
   }
 };
-
 exports.getSafeDropIns = async (req, res) => {
   try {
     const {

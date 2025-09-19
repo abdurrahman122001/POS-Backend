@@ -1,7 +1,8 @@
 // controllers/saleController.js
+const mongoose = require('mongoose'); // Added import
 const Sale = require("../models/Sale");
 const Product = require("../models/Product");
-
+const SaleReturn = require("../models/SaleReturn");
 exports.createSale = async (req, res) => {
   try {
     const { items, tender = 0, customerId, paymentMode } = req.body || {};
@@ -67,6 +68,149 @@ exports.createSale = async (req, res) => {
   } catch (e) {
     console.error("Error in createSale:", e);
     res.status(500).json({ message: e.message });
+  }
+};
+exports.createReturn = async (req, res) => {
+  try {
+    const { originalSaleId, customerId, items, returnAmount: frontendReturnAmount, notes } = req.body;
+
+    // Validate input
+    if (!originalSaleId || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Missing or invalid required fields: originalSaleId and items are required' });
+    }
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(originalSaleId)) {
+      return res.status(400).json({ message: `Invalid originalSaleId: ${originalSaleId}` });
+    }
+
+    // Find the original sale
+    const sale = await Sale.findById(originalSaleId);
+    if (!sale) {
+      return res.status(404).json({ message: `Original sale not found: ${originalSaleId}` });
+    }
+
+    // Validate return items
+    const origItems = sale.items.map(item => ({ ...item.toObject() }));
+    for (const returnItem of items) {
+      if (!mongoose.Types.ObjectId.isValid(returnItem.productId)) {
+        return res.status(400).json({ message: `Invalid productId for ${returnItem.name}: ${returnItem.productId}` });
+      }
+      const saleItem = origItems.find(si => si.product.toString() === returnItem.productId);
+      if (!saleItem) {
+        return res.status(400).json({ message: `Product ${returnItem.name} (ID: ${returnItem.productId}) not found in sale` });
+      }
+      if (!Number.isFinite(returnItem.qty) || returnItem.qty <= 0 || returnItem.qty > saleItem.qty) {
+        return res.status(400).json({
+          message: `Invalid return quantity for ${returnItem.name}. Requested: ${returnItem.qty}, Purchased: ${saleItem.qty}`,
+        });
+      }
+      if (!Number.isFinite(returnItem.total) || returnItem.total <= 0) {
+        return res.status(400).json({ message: `Invalid total for ${returnItem.name}: ${returnItem.total}` });
+      }
+    }
+
+    // Calculate prorated totals
+    let totalReturnAmount = 0;
+    for (const returnItem of items) {
+      const origItem = origItems.find(oi => oi.product.toString() === returnItem.productId);
+      const proratedTotal = (returnItem.qty / origItem.qty) * origItem.total;
+      totalReturnAmount += proratedTotal;
+    }
+
+    // Adjust sale items and totals
+    const toRemove = [];
+    for (let i = 0; i < sale.items.length; i++) {
+      const saleItem = sale.items[i];
+      const returnItem = items.find(it => it.productId === saleItem.product.toString());
+      if (returnItem) {
+        const origQty = saleItem.qty;
+        const origTotal = saleItem.total;
+        const returnQty = returnItem.qty;
+        const returnTotal = (returnQty / origQty) * origTotal;
+        const remainingQty = origQty - returnQty;
+        if (remainingQty <= 0) {
+          toRemove.push(i);
+        } else {
+          saleItem.qty = remainingQty;
+          saleItem.total = origTotal - returnTotal;
+        }
+      }
+    }
+    for (let j = toRemove.length - 1; j >= 0; j--) {
+      sale.items.splice(toRemove[j], 1);
+    }
+
+    sale.netTotal -= totalReturnAmount;
+    sale.returnAmount += totalReturnAmount;
+    sale.returned = sale.netTotal <= 0;
+
+    let savedSale = sale;
+    if (sale.items.length === 0 || sale.netTotal <= 0) {
+      await Sale.findByIdAndDelete(originalSaleId);
+      savedSale = null;
+    } else {
+      savedSale = await sale.save();
+    }
+
+    // Prepare return items with prorated totals
+    const returnItems = items.map(item => {
+      const origItem = origItems.find(oi => oi.product.toString() === item.productId);
+      const proratedTotal = origItem ? (item.qty / origItem.qty) * origItem.total : item.total;
+      return {
+        productId: item.productId,
+        name: item.name,
+        price: item.price,
+        qty: item.qty,
+        total: proratedTotal,
+      };
+    });
+
+    // Create the return document
+    const saleReturn = new SaleReturn({
+      originalSaleId,
+      customerId: customerId || sale.customerId,
+      items: returnItems,
+      returnAmount: totalReturnAmount,
+      notes: notes || '',
+    });
+
+    const savedReturn = await saleReturn.save();
+
+    if (savedSale) {
+      savedSale.returns.push(savedReturn._id);
+      await savedSale.save();
+    }
+
+    // Update product stock
+    for (const returnItem of returnItems) {
+      const product = await Product.findById(returnItem.productId);
+      if (product) {
+        if (product.unit === 'g') {
+          product.stockGrams = (product.stockGrams || 0) + returnItem.qty;
+        } else {
+          product.stockQty = (product.stockQty || 0) + returnItem.qty;
+        }
+        await product.save();
+      } else {
+        console.warn(`Product ${returnItem.productId} not found for stock update`);
+      }
+    }
+
+    res.status(201).json(savedReturn);
+  } catch (error) {
+    console.error('Error creating return:', error, 'Payload:', req.body);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+}
+// Other controller functions (unchanged)
+exports.getSales = async (req, res) => {
+  try {
+    const sales = await Sale.find().populate('items.product');
+    res.status(200).json({ data: sales });
+  } catch (error) {
+    console.error('Error fetching sales:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 

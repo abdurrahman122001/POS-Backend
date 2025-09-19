@@ -1,136 +1,141 @@
+// controllers/subcategoryController.js
+const mongoose = require("mongoose");
+const { isValidObjectId } = mongoose;
 const Subcategory = require("../models/Subcategory");
 const Category = require("../models/Category");
 
-// Helper to handle Mongo duplicate key errors cleanly
 const isDupKeyError = (err) => err && err.code === 11000;
+
+// Resolve category by id (if looks like ObjectId) OR by name
+async function resolveCategory(input) {
+  if (!input) return null;
+  const trimmed = String(input).trim();
+  if (isValidObjectId(trimmed)) {
+    return Category.findById(trimmed);
+  }
+  // Case-insensitive name match (optional: add index on name lowercased)
+  return Category.findOne({ name: trimmed });
+}
 
 // GET /subcategories/:id
 exports.getSubcategory = async (req, res) => {
-    try {
-        const item = await Subcategory.findById(req.params.id).populate({
-            path: "category",
-            select: "name isActive",
-        });
-        if (!item) return res.status(404).json({ message: "Subcategory not found" });
-        res.json(item);
-    } catch (err) {
-        res.status(400).json({ message: "Invalid ID" });
-    }
+  try {
+    const item = await Subcategory.findById(req.params.id).populate({
+      path: "category",
+      select: "name isActive",
+    });
+    if (!item) return res.status(404).json({ message: "Subcategory not found" });
+    res.json(item);
+  } catch {
+    res.status(400).json({ message: "Invalid ID" });
+  }
 };
-
 
 // POST /subcategories
-// body: { name, description?, image?, isActive?, category }
+// body: { name, description?, image?, isActive?, category }  // category can be name or _id
 exports.createSubcategory = async (req, res) => {
-    try {
-        const { name, description = "", image, isActive = true, category } = req.body;
-
-
-        if (!name || !category) {
-            return res.status(400).json({ message: "'name' and 'category' are required" });
-        }
-
-
-        // Find category by name instead of _id
-        const catExists = await Category.findOne({ name: category.trim() });
-
-        if (!catExists) return res.status(404).json({ message: `Category '${category}' not found` });
-
-
-        const created = await Subcategory.create({
-            name: name.trim(),
-            description: description.trim(),
-            image,
-            isActive,
-            category: catExists._id,
-        });
-
-
-        const populated = await created.populate({ path: "category", select: "name isActive" });
-        res.status(201).json(populated);
-    } catch (err) {
-        if (isDupKeyError(err)) {
-            return res
-                .status(409)
-                .json({ message: "A subcategory with this name already exists in the selected category" });
-        }
-        res.status(500).json({ message: "Failed to create subcategory" });
+  try {
+    const { name, description = "", image, isActive = true, category } = req.body;
+    if (!name || !category) {
+      return res.status(400).json({ message: "'name' and 'category' are required" });
     }
+
+    const cat = await resolveCategory(category);
+    if (!cat) return res.status(404).json({ message: `Category '${category}' not found` });
+
+    const created = await Subcategory.create({
+      name: name.trim(),
+      description: (description || "").trim(),
+      image,
+      isActive: !!isActive,
+      category: cat._id,
+    });
+
+    const populated = await created.populate({ path: "category", select: "name isActive" });
+    res.status(201).json(populated);
+  } catch (err) {
+    if (isDupKeyError(err)) {
+      return res
+        .status(409)
+        .json({ message: "A subcategory with this name already exists in the selected category" });
+    }
+    res.status(500).json({ message: "Failed to create subcategory" });
+  }
 };
+
 // GET /subcategories?search=&category=&isActive=true
+// 'category' can be name or _id
 exports.listSubcategories = async (req, res) => {
-    try {
-        const { search = "", category, isActive } = req.query;
+  try {
+    const { search = "", category, isActive } = req.query;
 
-        const filter = {};
-        if (search) filter.name = { $regex: search, $options: "i" };
-        if (category) {
-            const catExists = await Category.findOne({ name: category.trim() });
-            if (!catExists) return res.status(404).json({ message: `Category '${category}' not found` });
-            filter.category = catExists._id;
-        }
-        if (typeof isActive !== "undefined") filter.isActive = isActive === "true" || isActive === true;
+    const filter = {};
+    if (search) filter.name = { $regex: search, $options: "i" };
 
-        const items = await Subcategory.find(filter)
-            .populate({ path: "category", select: "name isActive" })
-            .sort({ createdAt: -1 });
-
-        res.json(items);
-    } catch (err) {
-        res.status(500).json({ message: "Failed to load subcategories", error: err.message });
+    if (typeof isActive !== "undefined") {
+      filter.isActive = isActive === "true" || isActive === true;
     }
+
+    if (category) {
+      const cat = await resolveCategory(category);
+      if (!cat) return res.status(404).json({ message: `Category '${category}' not found` });
+      filter.category = cat._id;
+    }
+
+    const items = await Subcategory.find(filter)
+      .populate({ path: "category", select: "name isActive" })
+      .sort({ createdAt: -1 });
+
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to load subcategories", error: err.message });
+  }
 };
 
 // PUT /subcategories/:id
+// body.category can be name or _id
 exports.updateSubcategory = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { name, description, image, isActive, category } = req.body;
+  try {
+    const { id } = req.params;
+    const { name, description, image, isActive, category } = req.body;
 
+    const update = {};
+    if (typeof name !== "undefined") update.name = name.trim();
+    if (typeof description !== "undefined") update.description = (description || "").trim();
+    if (typeof image !== "undefined") update.image = image;
+    if (typeof isActive !== "undefined") update.isActive = !!isActive;
 
-        if (category) {
-            const catExists = await Category.findById(category);
-            if (!catExists) return res.status(404).json({ message: "Parent category not found" });
-        }
-
-
-        const update = {};
-        if (typeof name !== "undefined") update.name = name.trim();
-        if (typeof description !== "undefined") update.description = (description || "").trim();
-        if (typeof image !== "undefined") update.image = image;
-        if (typeof isActive !== "undefined") update.isActive = !!isActive;
-        if (typeof category !== "undefined") update.category = category;
-
-
-        const updated = await Subcategory.findByIdAndUpdate(id, update, {
-            new: true,
-            runValidators: true,
-        }).populate({ path: "category", select: "name isActive" });
-
-
-        if (!updated) return res.status(404).json({ message: "Subcategory not found" });
-
-
-        res.json(updated);
-    } catch (err) {
-        if (isDupKeyError(err)) {
-            return res
-                .status(409)
-                .json({ message: "A subcategory with this name already exists in the selected category" });
-        }
-        res.status(500).json({ message: "Failed to update subcategory" });
+    if (typeof category !== "undefined") {
+      const cat = await resolveCategory(category);
+      if (!cat) return res.status(404).json({ message: "Parent category not found" });
+      update.category = cat._id;
     }
-};
 
+    const updated = await Subcategory.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true,
+    }).populate({ path: "category", select: "name isActive" });
+
+    if (!updated) return res.status(404).json({ message: "Subcategory not found" });
+    res.json(updated);
+  } catch (err) {
+    if (isDupKeyError(err)) {
+      return res
+        .status(409)
+        .json({ message: "A subcategory with this name already exists in the selected category" });
+    }
+    res.status(500).json({ message: "Failed to update subcategory" });
+  }
+};
 
 // DELETE /subcategories/:id
 exports.deleteSubcategory = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const deleted = await Subcategory.findByIdAndDelete(id);
-        if (!deleted) return res.status(404).json({ message: "Subcategory not found" });
-        res.json({ message: "Subcategory deleted" });
-    } catch (err) {
-        res.status(500).json({ message: "Failed to delete subcategory" });
-    }
+  try {
+    const { id } = req.params;
+    const deleted = await Subcategory.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ message: "Subcategory not found" });
+    res.json({ message: "Subcategory deleted" });
+  } catch {
+    res.status(500).json({ message: "Failed to delete subcategory" });
+  }
 };

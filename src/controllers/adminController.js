@@ -14,12 +14,12 @@ const generateToken = (admin) => {
 // @desc   Register new admin
 exports.registerAdmin = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, counter } = req.body;
 
     const exists = await Admin.findOne({ email });
     if (exists) return res.status(400).json({ message: "Admin already exists" });
 
-    const admin = await Admin.create({ name, email, password, role });
+    const admin = await Admin.create({ name, email, password, role, counter });
     res.status(201).json({
       message: "Admin registered successfully",
       admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role },
@@ -72,8 +72,7 @@ exports.resetPasswordAdmin = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-// @desc   Login admin
-// controllers/adminController.js (login)
+// @desc   Login admin// @desc   Login admin
 exports.loginAdmin = async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -81,19 +80,37 @@ exports.loginAdmin = async (req, res) => {
       return res.status(400).json({ message: "Email and password are required" });
     }
 
-    const admin = await Admin.findOne({ email });
+    const admin = await Admin.findOne({ email }).select("+password");
     if (!admin) return res.status(404).json({ message: "Admin not found" });
 
     const isMatch = await admin.comparePassword(password);
     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
 
-    const token = jwt.sign({ id: admin._id, role: admin.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token, admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role } });
+    // Ensure counter is valid (optional: if counter-based restrictions apply)
+    if (!admin.counter) {
+      return res.status(400).json({ message: "No counter assigned to this admin" });
+    }
+
+    const token = jwt.sign(
+      { id: admin._id, role: admin.role, counter: admin.counter },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      token,
+      admin: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+        counter: admin.counter, // Include counter in response
+      },
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 // @desc   Get all admins
 exports.getAdmins = async (req, res) => {

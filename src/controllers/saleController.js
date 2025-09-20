@@ -1,17 +1,24 @@
-// controllers/saleController.js
-const mongoose = require('mongoose'); // Added import
+
+const mongoose = require('mongoose');
 const Sale = require("../models/Sale");
 const Product = require("../models/Product");
 const SaleReturn = require("../models/SaleReturn");
+
 exports.createSale = async (req, res) => {
   try {
-    const { items, tender = 0, customerId, paymentMode } = req.body || {};
+    const { items, tender = 0, customerId, paymentMode, customerContact, counter } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "items are required" });
     }
     if (!paymentMode) {
       return res.status(400).json({ message: "paymentMode is required" });
+    }
+    if (paymentMode === "Credit" && !customerContact) {
+      return res.status(400).json({ message: "customerContact is required for Credit payment mode" });
+    }
+    if (!counter || !["Counter One", "Counter Two"].includes(counter)) {
+      return res.status(400).json({ message: "Valid counter is required (Counter One or Counter Two)" });
     }
 
     const detailed = [];
@@ -24,8 +31,20 @@ exports.createSale = async (req, res) => {
       const qty = Number(it.qty) || 0;
       if (qty <= 0) return res.status(400).json({ message: "Invalid qty for product " + prod.name });
 
-      if (prod.stockQty < qty) {
-        return res.status(400).json({ message: `Insufficient stock for ${prod.name}` });
+      // Check stock based on product type
+      if (prod.unit && it.grams !== undefined) {
+        // Weight-based product
+        const gramsToDeduct = prod.unit === 'kg' ? Number(it.grams) * 1000 : Number(it.grams);
+        if (prod.stockGrams < gramsToDeduct) {
+          return res.status(400).json({ message: `Insufficient stock for ${prod.name}` });
+        }
+      } else if (prod.stockQty !== undefined) {
+        // Unit-based product
+        if (prod.stockQty < qty) {
+          return res.status(400).json({ message: `Insufficient stock for ${prod.name}` });
+        }
+      } else {
+        return res.status(400).json({ message: `Invalid stock configuration for ${prod.name}` });
       }
 
       const price = Number.isFinite(it.unitPrice) && it.unitPrice > 0 ? it.unitPrice : prod.price;
@@ -35,33 +54,53 @@ exports.createSale = async (req, res) => {
 
       detailed.push({
         product: prod._id,
-        name: it.name || prod.name, // Prefer frontend name if provided
-        price, // Use frontend unitPrice if valid, else fallback to prod.price
+        name: it.name || prod.name,
+        price,
         qty,
-        discount, // Include discount
+        discount,
         total: lineTotal,
+        unit: it.unit,
+        grams: it.grams,
       });
     }
 
     const returnAmount = Math.max(0, Number(tender) - netTotal);
     if (tender < netTotal && !["Credit Card", "Credit"].includes(paymentMode)) {
-  return res.status(400).json({ message: "Tender amount is less than net total" });
-}
+      return res.status(400).json({ message: "Tender amount is less than net total" });
+    }
 
     const sale = await Sale.create({
       customerId,
+      customerContact: paymentMode === "Credit" ? customerContact : undefined,
       paymentMode,
+      counter,
       items: detailed,
       netTotal,
       tender,
       returnAmount,
     });
 
-    // Update stock quantities
+    // Update product stock
     await Promise.all(
-      detailed.map((d) =>
-        Product.findByIdAndUpdate(d.product, { $inc: { stockQty: -d.qty } })
-      )
+      detailed.map(async (d) => {
+        if (d.unit && d.grams !== undefined) {
+          const gramsToDeduct = d.unit === 'kg' ? Number(d.grams) * 1000 : Number(d.grams);
+          const updatedProduct = await Product.findByIdAndUpdate(
+            d.product,
+            { $inc: { stockGrams: -gramsToDeduct } },
+            { new: true }
+          );
+          console.log(`Updated stockGrams for ${d.name}: ${updatedProduct.stockGrams}`);
+          return updatedProduct;
+        }
+        const updatedProduct = await Product.findByIdAndUpdate(
+          d.product,
+          { $inc: { stockQty: -d.qty } },
+          { new: true }
+        );
+        console.log(`Updated stockQty for ${d.name}: ${updatedProduct.stockQty}`);
+        return updatedProduct;
+      })
     );
 
     res.status(201).json(sale);
@@ -71,6 +110,63 @@ exports.createSale = async (req, res) => {
   }
 };
 
+exports.listSales = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, startDate, endDate, paymentMode } = req.query;
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build filter object
+    const filter = {};
+
+    // Add date range filter in IST
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate && !isNaN(Date.parse(startDate))) {
+        const start = new Date(startDate);
+        start.setHours(start.getHours() - 5);
+        start.setMinutes(start.getMinutes() - 30);
+        filter.createdAt.$gte = start;
+      }
+      if (endDate && !isNaN(Date.parse(endDate))) {
+        const end = new Date(endDate);
+        end.setHours(23 + 5, 59 + 30, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+      if (Object.keys(filter.createdAt).length === 0) {
+        delete filter.createdAt;
+      }
+    }
+
+    // Add paymentMode filter
+    if (paymentMode && ["Cash", "UPI", "Credit Card", "Credit"].includes(paymentMode)) {
+      filter.paymentMode = paymentMode;
+    }
+
+    const [sales, total] = await Promise.all([
+      Sale.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Sale.countDocuments(filter)
+    ]);
+
+    res.json({
+      data: sales,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum)
+    });
+  } catch (e) {
+    console.error("listSales error:", e);
+    res.status(500).json({ message: e.message });
+  }
+};
+
+// Other controller functions (unchanged)
 exports.createReturn = async (req, res) => {
   try {
     const { originalSaleId, customerId, items, returnAmount: frontendReturnAmount, notes } = req.body;
@@ -203,8 +299,8 @@ exports.createReturn = async (req, res) => {
     console.error('Error creating return:', error, 'Payload:', req.body);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
-}
-// Other controller functions (unchanged)
+};
+
 exports.getSales = async (req, res) => {
   try {
     const sales = await Sale.find().populate('items.product');
@@ -215,58 +311,6 @@ exports.getSales = async (req, res) => {
   }
 };
 
-exports.listSales = async (req, res) => {
-  try {
-    const { page = 1, limit = 10, startDate, endDate } = req.query;
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
-    const skip = (pageNum - 1) * limitNum;
-
-    // Build filter object
-    const filter = {};
-
-    // Add date range filter in IST
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate && !isNaN(Date.parse(startDate))) {
-        const start = new Date(startDate);
-        start.setHours(start.getHours() - 5);
-        start.setMinutes(start.getMinutes() - 30);
-        filter.createdAt.$gte = start;
-      }
-      if (endDate && !isNaN(Date.parse(endDate))) {
-        const end = new Date(endDate);
-        end.setHours(23 + 5, 59 + 30, 59, 999);
-        filter.createdAt.$lte = end;
-      }
-      if (Object.keys(filter.createdAt).length === 0) {
-        delete filter.createdAt;
-      }
-    }
-
-    const [sales, total] = await Promise.all([
-      Sale.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Sale.countDocuments(filter)
-    ]);
-
-    res.json({
-      data: sales,
-      total,
-      page: pageNum,
-      limit: limitNum,
-      totalPages: Math.ceil(total / limitNum)
-    });
-  } catch (e) {
-    console.error("listSales error:", e);
-    res.status(500).json({ message: e.message });
-  }
-};
-
-// controllers/saleController.js - Updated deleteSale function
 exports.deleteSale = async (req, res) => {
   try {
     const { id } = req.params;
@@ -293,7 +337,6 @@ exports.deleteSale = async (req, res) => {
   }
 };
 
-// NEW: Get single sale with full details
 exports.getSale = async (req, res) => {
   try {
     const { id } = req.params;

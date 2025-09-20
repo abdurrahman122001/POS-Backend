@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 const SaleItemSchema = new mongoose.Schema(
@@ -15,6 +16,13 @@ const SaleItemSchema = new mongoose.Schema(
 const SaleSchema = new mongoose.Schema(
   {
     customerId: { type: String },
+    customerContact: {
+      type: String,
+      required: function () {
+        return this.paymentMode === "Credit"; // Required only for Credit payment mode
+      },
+      match: [/^\+?\d{10,15}$/, "Please provide a valid phone number"], // Basic phone number validation
+    },
     paymentMode: { type: String, required: true, enum: ["Cash", "UPI", "Credit Card", "Credit"] },
     items: { type: [SaleItemSchema], required: true },
     netTotal: { type: Number, required: true },
@@ -22,6 +30,11 @@ const SaleSchema = new mongoose.Schema(
     returnAmount: { type: Number, default: 0 },
     returns: [{ type: mongoose.Schema.Types.ObjectId, ref: "SaleReturn" }],
     returned: { type: Boolean, default: false },
+    counter: {
+      type: String,
+      enum: ["Counter One", "Counter Two"],
+      required: true,
+    },
   },
   { timestamps: true }
 );

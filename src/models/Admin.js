@@ -29,6 +29,12 @@ const adminSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    counter: {
+      type: String,
+      enum: ["Counter One", "Counter Two"], // Restrict to valid counters
+      required: true, // Ensure every user has a counter
+      default: "Counter One", // Default for new users
+    },
     resetPasswordToken: String,
     resetPasswordExpires: Date,
   },
